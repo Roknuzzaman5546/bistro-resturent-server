@@ -35,16 +35,58 @@ async function run() {
         const cartsCollection = client.db("bistroDb").collection("carts");
 
         // jwt related api
-        app.get('/jwt', async (req, res) => {
+        app.post('/jwt', async (req, res) => {
             const user = req.body;
             const token = jwt.sign(user, process.env.ACCESS_TOKEN, { expiresIn: '1hr' })
             res.send({ token })
         })
 
+        const verifytoken = (req, res, next) => {
+            console.log('access token', req.headers.authorization)
+            if (!req.headers.authorization) {
+                return res.status(401).send({ message: "forbidden access" })
+            }
+            const token = req.headers.authorization.split(' ')[1]
+            jwt.verify(token, process.env.ACCESS_TOKEN, (err, decoded) => {
+                if (err) {
+                    return res.status(401).send({ message: 'forbidden access' })
+                }
+                req.decoded = decoded;
+                next();
+            })
+        }
+
+        const verrfyadmin = async (req, res, next) => {
+            const email = req.decoded?.email;
+            const query = { email: email }
+            const user = await userCollection.findOne(query)
+            const isadmin = user?.role == 'admin';
+            if (!isadmin) {
+                return res.status(401).send({ message: 'unauthorized access'})
+            }
+            next();
+        }
+
+
         // users related api
-        app.get('/users', async (req, res) => {
+        app.get('/users', verifytoken, async (req, res) => {
+            console.log(req.headers)
             const result = await userCollection.find().toArray();
             res.send(result)
+        })
+
+        app.get('/users/admin/:email', verifytoken, verrfyadmin, async (req, res) => {
+            const email = req.params.email;
+            if (email !== req.decoded?.email) {
+                return res.status(401).send({ message: 'unathourized access' })
+            }
+            const query = { email: email }
+            const user = await userCollection.findOne(query)
+            let admin = false;
+            if (user) {
+                admin = user.role === 'admin'
+            }
+            res.send({ admin })
         })
 
         app.post('/users', async (req, res) => {
