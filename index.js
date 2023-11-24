@@ -4,11 +4,15 @@ const app = express()
 const jwt = require('jsonwebtoken');
 const cors = require('cors');
 require('dotenv').config();
+const stripe = require("stripe")(process.env.API_SECRET)
 const port = process.env.PORT || 5000;
 
 
 // middleware 
-app.use(cors());
+app.use(cors({
+    origin: ['http://localhost:5173']
+}));
+
 app.use(express.json());
 
 console.log(process.env.DB_PASS)
@@ -62,20 +66,19 @@ async function run() {
             const user = await userCollection.findOne(query)
             const isadmin = user?.role == 'admin';
             if (!isadmin) {
-                return res.status(401).send({ message: 'unauthorized access'})
+                return res.status(401).send({ message: 'unauthorized access' })
             }
             next();
         }
 
 
         // users related api
-        app.get('/users', verifytoken, async (req, res) => {
-            console.log(req.headers)
+        app.get('/users', verifytoken, verrfyadmin, async (req, res) => {
             const result = await userCollection.find().toArray();
             res.send(result)
         })
 
-        app.get('/users/admin/:email', verifytoken, verrfyadmin, async (req, res) => {
+        app.get('/users/admin/:email', verifytoken, async (req, res) => {
             const email = req.params.email;
             if (email !== req.decoded?.email) {
                 return res.status(401).send({ message: 'unathourized access' })
@@ -100,7 +103,7 @@ async function run() {
             res.send(result)
         })
 
-        app.patch('/users/admin/:id', async (req, res) => {
+        app.patch('/users/admin/:id', verifytoken, verrfyadmin, async (req, res) => {
             const id = req.params.id;
             const filter = { _id: new ObjectId(id) }
             const updatedoc = {
@@ -113,7 +116,7 @@ async function run() {
         })
 
 
-        app.delete('/users/:id', async (req, res) => {
+        app.delete('/users/:id', verifytoken, verrfyadmin, async (req, res) => {
             const id = req.params.id;
             const query = { _id: new ObjectId(id) }
             const result = await userCollection.deleteOne(query)
@@ -125,6 +128,12 @@ async function run() {
         // menu related api
         app.get('/menu', async (req, res) => {
             const result = await menuCollection.find().toArray()
+            res.send(result)
+        })
+
+        app.post('/menu', verifytoken, verrfyadmin, async (req, res) => {
+            const item = req.body;
+            const result = await menuCollection.insertOne(item)
             res.send(result)
         })
 
@@ -151,6 +160,20 @@ async function run() {
             const query = { _id: new ObjectId(id) }
             const result = await cartsCollection.deleteOne(query)
             res.send(result)
+        })
+
+        app.post('/create-payment-intent', async (req, res) => {
+            const { price } = req.body;
+            const ammount = parseInt(price * 100)
+            const paymentIntent = await stripe.paymentIntents.create({
+                ammount: ammount,
+                currency: 'usd',
+                payment_method_types: ['card']
+
+            })
+            res.send({
+                clientSecret: paymentIntent.client_secret,
+            });
         })
 
         // Send a ping to confirm a successful connection
